@@ -5,7 +5,7 @@ The code in this repository will let you train a Neural Network to play Pong sol
 ### Setup
 
 1. Install Openai Gym [here](https://gym.openai.com/docs). 
-2. Run `pip install -e '.[atari]'`.
+2. Run " pip install gym[atari] "
 
 ### Seeing the game
 
