@@ -1,3 +1,6 @@
 
 gym/
 environment.yml
+*.ipynb
+*.pkl
+*.ipynb

@@ -20,7 +20,7 @@ render = True           # Display game window
 # model initialization
 D = 80 * 80 # input dimensionality: 80x80 grid
 if resume:
-	model = pickle.load(open('weights.np', 'rb'))
+	model = pickle.load(open('weights.pkl', 'rb'))
 else:
 	model = {
 		'W1' : np.random.randn(H,D) / np.sqrt(D), # Neuron (row) i, for pizel j
@@ -36,7 +36,8 @@ def sigmoid(x):
 	Sigmoid "squashing" function to interval [0,1]
 	# https://en.wikipedia.org/wiki/Sigmoid_function
 	"""
-	return 1.0 / (1.0 + np.exp(-x)) 
+	# TODO
+	pass
 
 def preprocess(I):
 	""" 
@@ -72,11 +73,8 @@ def policy_forward(x):
 	Forward pass 
 	Will be able to detect various game scenarios (e.g. the ball is in the top, and our paddle is in the middle)
 	"""
-	h = np.dot(model['W1'], x)
-	h[ h < 0 ] = 0                      # ReLU nonlinearity
-	logp = np.dot(model['W2'], h)
-	p = sigmoid(logp)      # squash it in the range of [0, 1]
-	return p, h            # return probability of taking action 2, and hidden state
+	# TODO
+	pass
 
 def policy_backward(eph, epdlogp):
 	""" 
@@ -116,14 +114,9 @@ while True:
 	if render: env.render()
 
 	# preprocess the observation, set input to network to be difference image
-	cur_x = preprocess(observation)
-	x = cur_x - prev_x if prev_x is not None else np.zeros(D) # x is our image difference
-	prev_x = cur_x
+
 
 	# forward the policy network and sample an action from the returned probability
-	aprob, hidden_state = policy_forward(x)
-	action = 2 if np.random.uniform() < aprob else 3 # stochastic part. Essentially rolling a dice
-	# action = 2 if np.random.uniform() < aprob else 5 # stochastic part. Essentially rolling a dice
 
 	# record various intermediates (needed later for backprop)
 	episode_observations.append(x) # observation
@@ -177,7 +170,7 @@ while True:
 
 		if episode_number % 100 == 0: 
 			print('Saving model... ')
-			pickle.dump(model, open('weights.np', 'wb'))
+			pickle.dump(model, open('weights.pkl', 'wb'))
 
 		reward_sum = 0
 		observation = env.reset() # reset env
