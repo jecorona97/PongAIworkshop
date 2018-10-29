@@ -1,16 +1,21 @@
-""" Trains an agent with (stochastic) Policy Gradients on Pong. Uses OpenAI Gym. """
+""" 
+Trains an agent with (stochastic) Policy Gradients on Pong. Uses OpenAI Gym. 
+https://github.com/openai/gym/blob/master/gym/envs/atari/atari_env.py
+"""
 import numpy as np
 import pickle
 import gym
 
 # hyperparameters
-H = 200 # number of hidden layer neurons
-batch_size = 10 # every how many episodes to do a param update?
-learning_rate = 1e-4
-gamma = 0.99 # discount factor for reward
-decay_rate = 0.99 # decay factor for RMSProp leaky sum of grad^2
-resume = True # resume from previous checkpoint?
-render = False
+H = 200                 # Number of hidden layer neurons
+batch_size = 10         # How many games we play before updating the weights of our network.
+learning_rate = 1e-4    # The rate at which we learn from our results to compute the new weights. A higher rate means 
+					    # 	we react more to results and a lower rate means we don’t react as strongly to each result.
+
+gamma = 0.99            # The discount factor we use to discount the effect of old actions on the final result.
+decay_rate = 0.99       # Parameter used in RMSProp
+resume = True           # Resume from previous checkpoint?
+render = True           # Display game window
 
 # model initialization
 D = 80 * 80 # input dimensionality: 80x80 grid
@@ -18,90 +23,136 @@ if resume:
 	model = pickle.load(open('weights.np', 'rb'))
 else:
 	model = {
-		'W1' : np.random.randn(H,D) / np.sqrt(D), # "Xavier" initialization
-		'W2' : np.random.randn(H) / np.sqrt(H)
-	}
+		'W1' : np.random.randn(H,D) / np.sqrt(D), # Neuron (row) i, for pizel j
+		'W2' : np.random.randn(H) / np.sqrt(H) # the weights we place on the activation of neuron i in the hidden layer
+	} 	# We divide by the square root of the number of the dimension size to normalize our weights.
 	
+# Store intermediate values for backpropagation	
 grad_buffer = { k : np.zeros_like(v) for k,v in model.items() } # update buffers that add up gradients over a batch
 rmsprop_cache = { k : np.zeros_like(v) for k,v in model.items() } # rmsprop memory
 
 def sigmoid(x): 
-	return 1.0 / (1.0 + np.exp(-x)) # sigmoid "squashing" function to interval [0,1]
+	"""
+	Sigmoid "squashing" function to interval [0,1]
+	# https://en.wikipedia.org/wiki/Sigmoid_function
+	"""
+	return 1.0 / (1.0 + np.exp(-x)) 
 
-def prepro(I):
-	""" prepro 210x160x3 uint8 frame into 6400 (80x80) 1D float vector """
-	I = I[35:195] # crop
+def preprocess(I):
+	""" 
+	Preprocess 210x160x3 uint8 frame into 6400 (80x80) 1D float vector 
+	"""
+	I = I[35:195]    # crop
 	I = I[::2,::2,0] # downsample by factor of 2
-	I[I == 144] = 0 # erase background (background type 1)
-	I[I == 109] = 0 # erase background (background type 2)
-	I[I != 0] = 1 # everything else (paddles, ball) just set to 1
+	I[I == 144] = 0  # erase background (background type 1)
+	I[I == 109] = 0  # erase background (background type 2)
+	I[I != 0] = 1    # everything else (paddles, ball) just set to 1
 	return I.astype(np.float).ravel()
 
 def discount_rewards(r):
-	""" take 1D float array of rewards and compute discounted reward """
+	"""
+	Take 1D float array of rewards and compute discounted reward 
+	r: set of rewards for a bunch of timesteps
+	Weight the most immediate rewards higher than the later rewards, exponentially.
+	As time steps go forward, the rewards are exponentially decreased in importance.
+	Optimizing for short term. Pong is fast paced. Not much strategy involved.
+
+	# https://github.com/hunkim/ReinforcementZeroToAll/issues/1
+	"""
 	discounted_r = np.zeros_like(r)
 	running_add = 0
 	for t in reversed(range(0, r.size)):
-		if r[t] != 0: running_add = 0 # reset the sum, since this was a game boundary (pong specific!)
+		if r[t] != 0: running_add = 0     # reset the sum, since this was a game boundary (pong specific!)
 		running_add = running_add * gamma + r[t]
 		discounted_r[t] = running_add
 	return discounted_r
 
 def policy_forward(x):
+	"""
+	Forward pass 
+	Will be able to detect various game scenarios (e.g. the ball is in the top, and our paddle is in the middle)
+	"""
 	h = np.dot(model['W1'], x)
-	h[ h < 0 ] = 0 # ReLU nonlinearity
+	h[ h < 0 ] = 0                      # ReLU nonlinearity
 	logp = np.dot(model['W2'], h)
-	p = sigmoid(logp)
-	return p, h # return probability of taking action 2, and hidden state
+	p = sigmoid(logp)      # squash it in the range of [0, 1]
+	return p, h            # return probability of taking action 2, and hidden state
 
 def policy_backward(eph, epdlogp):
-	""" backward pass. (eph is array of intermediate hidden states) """
-	dW2 = np.dot(eph.T, epdlogp).ravel()
-	dh = np.outer(epdlogp, model['W2'])
-	dh[eph <= 0] = 0 # backpro prelu
-	dW1 = np.dot(dh.T, epx)
-	return { 'W1' : dW1, 'W2' : dW2}
+	""" 
+	Backward pass. 
+	Recursively computing derivatives, with respect to weights, at each layer.
+	Why Chain rule? We are taking the values at each layer, and using those 
+	values to compute the next set of partial derivatives (gradients).
+
+	eph: array of intermediate hidden states
+	epdlogp: modulates the gradient with Advantage
+
+	# https://www.youtube.com/watch?v=q555kfIFUCM
+	# https://www.youtube.com/watch?v=Ilg3gGewQ5U&vl=en
+	"""
+	dW2 = np.dot(eph.T, epdlogp).ravel() # derivative with respect to weight 2
+	dh = np.outer(epdlogp, model['W2'])  # derivative of hidden state
+	dh[eph <= 0] = 0                     # backprop relu
+	dW1 = np.dot(dh.T, epx)              # derivative with respect to weight 1
+	return { 'W1' : dW1, 'W2' : dW2}     # return both derivatives to update weights
 
 env = gym.make("Pong-v0")
 observation = env.reset()
-prev_x = None # used in computing the difference frame
-xs, hs, dlogps, drs = [],[],[],[]
+prev_x = None   # We want our policy network to detect motion. 
+				# Used in computing the difference frame
+
+episode_observations = []
+episode_hidden_layer_values = []
+episode_gradient_log_ps = []
+episode_rewards = []
+
 running_reward = None
 reward_sum = 0
 episode_number = 0
+
+# Begin training
 while True:
 	if render: env.render()
 
 	# preprocess the observation, set input to network to be difference image
-	cur_x = prepro(observation)
-	x = cur_x - prev_x if prev_x is not None else np.zeros(D)
+	cur_x = preprocess(observation)
+	x = cur_x - prev_x if prev_x is not None else np.zeros(D) # x is our image difference
 	prev_x = cur_x
 
 	# forward the policy network and sample an action from the returned probability
-	aprob, h = policy_forward(x)
-	action = 2 if np.random.uniform() < aprob else 3 # roll the dice!
+	aprob, hidden_state = policy_forward(x)
+	action = 2 if np.random.uniform() < aprob else 3 # stochastic part. Essentially rolling a dice
+	# action = 2 if np.random.uniform() < aprob else 5 # stochastic part. Essentially rolling a dice
 
 	# record various intermediates (needed later for backprop)
-	xs.append(x) # observation
-	hs.append(h) # hidden state
+	episode_observations.append(x) # observation
+	episode_hidden_layer_values.append(hidden_state) # hidden state
 	y = 1 if action == 2 else 0 # a "fake label"
-	dlogps.append(y - aprob) # grad that encourages the action that was taken to be taken (see http://cs231n.github.io/neural-networks-2/#losses if confused)
+
+	# gradient that encourages the action that was taken to be taken 
+	# see http://cs231n.github.io/neural-networks-2/#losses if confused
+	episode_gradient_log_ps.append(y - aprob) 
 
 	# step the environment and get new measurements
-	observation, reward, done, info = env.step(action)
+	observation, reward, done, info = env.step(action) # take action
 	reward_sum += reward
 
-	drs.append(reward) # record reward (has to be done after we call step() to get reward for previous action)
+	episode_rewards.append(reward) # record reward (has to be done after we call step() to get reward for previous action)
 
 	if done: # an episode finished
 		episode_number += 1
 
 		# stack together all inputs, hidden states, action gradients, and rewards for this episode
-		epx = np.vstack(xs)
-		eph = np.vstack(hs)
-		epdlogp = np.vstack(dlogps)
-		epr = np.vstack(drs)
-		xs,hs,dlogps,drs = [],[],[],[] # reset array memory
+		epx = np.vstack(episode_observations)
+		eph = np.vstack(episode_hidden_layer_values)
+		epdlogp = np.vstack(episode_gradient_log_ps)
+		epr = np.vstack(episode_rewards)
+
+		episode_observations = []
+		episode_hidden_layer_values = []
+		episode_gradient_log_ps = []
+		episode_rewards = [] # reset array memory
 
 		# compute the discounted reward backwards through time
 		discounted_epr = discount_rewards(epr)
@@ -121,15 +172,13 @@ while True:
 				model[k] += learning_rate * g / (np.sqrt(rmsprop_cache[k]) + 1e-5)
 				grad_buffer[k] = np.zeros_like(v) # reset batch gradient buffer
 
-		# boring book-keeping
 		running_reward = reward_sum if running_reward is None else running_reward * 0.99 + reward_sum * 0.01
 		print ('Episode %d reward total was %f. running mean: %f' % (episode_number, reward_sum, running_reward))
+
 		if episode_number % 100 == 0: 
 			print('Saving model... ')
 			pickle.dump(model, open('weights.np', 'wb'))
+
 		reward_sum = 0
 		observation = env.reset() # reset env
 		prev_x = None
-
-	# if reward != 0: # Pong has either +1 or -1 reward exactly when game ends.
-	# 	print ('ep %d: game finished, reward: %s' % (episode_number, str(reward))) + ('' if reward == -1 else ' !!!!!!!!')
