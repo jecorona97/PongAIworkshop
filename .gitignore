@@ -1,5 +1,8 @@
 
 gym/
+.vscode
+.ipynb_checkpoints
+__pycache__
 environment.yml
 *.ipynb
 *.pkl
