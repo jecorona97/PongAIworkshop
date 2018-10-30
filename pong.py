@@ -14,7 +14,7 @@ learning_rate = 1e-4    # The rate at which we learn from our results to compute
 
 gamma = 0.99            # The discount factor we use to discount the effect of old actions on the final result.
 decay_rate = 0.99       # Parameter used in RMSProp
-resume = True           # Resume from previous checkpoint?
+resume = False           # Resume from previous checkpoint?
 render = True           # Display game window
 
 # model initialization
@@ -36,8 +36,7 @@ def sigmoid(x):
 	Sigmoid "squashing" function to interval [0,1]
 	# https://en.wikipedia.org/wiki/Sigmoid_function
 	"""
-	# TODO
-	pass
+	return 1.0 / (1.0 + np.exp(-x)) 
 
 def preprocess(I):
 	""" 
@@ -73,8 +72,11 @@ def policy_forward(x):
 	Forward pass 
 	Will be able to detect various game scenarios (e.g. the ball is in the top, and our paddle is in the middle)
 	"""
-	# TODO
-	pass
+	h = np.dot(model['W1'], x)
+	h[ h < 0 ] = 0                      # ReLU nonlinearity
+	logp = np.dot(model['W2'], h)
+	p = sigmoid(logp)      # squash it in the range of [0, 1]
+	return p, h            # return probability of taking action 2, and hidden state
 
 def policy_backward(eph, epdlogp):
 	""" 
@@ -114,9 +116,14 @@ while True:
 	if render: env.render()
 
 	# preprocess the observation, set input to network to be difference image
-
+	cur_x = preprocess(observation)
+	x = cur_x - prev_x if prev_x is not None else np.zeros(D) # x is our image difference
+	prev_x = cur_x
 
 	# forward the policy network and sample an action from the returned probability
+	aprob, hidden_state = policy_forward(x)
+	action = 2 if np.random.uniform() < aprob else 3 # stochastic part. Essentially rolling a dice
+	# action = 2 if np.random.uniform() < aprob else 5 # stochastic part. Essentially rolling a dice
 
 	# record various intermediates (needed later for backprop)
 	episode_observations.append(x) # observation
