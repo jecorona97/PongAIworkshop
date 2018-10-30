@@ -14,7 +14,7 @@ learning_rate = 1e-4    # The rate at which we learn from our results to compute
 
 gamma = 0.99            # The discount factor we use to discount the effect of old actions on the final result.
 decay_rate = 0.99       # Parameter used in RMSProp
-resume = False           # Resume from previous checkpoint?
+resume = True           # Resume from previous checkpoint?
 render = True           # Display game window
 
 # model initialization
