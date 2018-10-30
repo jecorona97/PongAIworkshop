@@ -1,3 +1,6 @@
 {
-    "python.pythonPath": "/Users/Ed/miniconda3/envs/pong36/bin/python"
+    "python.pythonPath": "/Users/Ed/miniconda3/envs/pong36/bin/python",
+    "C_Cpp.intelliSenseEngineFallback": "Disabled",
+    "python.linting.pylintEnabled": false,
+    "python.linting.enabled": false
 }
